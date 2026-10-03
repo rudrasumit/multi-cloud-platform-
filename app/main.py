@@ -1,614 +1,389 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import StreamingResponse, HTMLResponse
-import boto3
-from botocore.exceptions import ClientError, BotoCoreError
+
 import os
+import secrets
+from io import BytesIO
 from pathlib import Path
+
+import boto3
 from dotenv import load_dotenv
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
+from azure.storage.blob import BlobServiceClient
+from botocore.exceptions import ClientError
+from azure.core.exceptions import AzureError
 
+load_dotenv()
 
-# ============================================================
-# LOAD ENVIRONMENT VARIABLES
-# ============================================================
+app = FastAPI(title="Multi-Cloud Data Management Platform")
 
-BASE_DIR = Path(__file__).resolve().parent
+secret_key = os.getenv("SESSION_SECRET_KEY")
+if not secret_key:
+    raise RuntimeError("SESSION_SECRET_KEY is missing from .env")
 
-# Load .env from the same folder as this Python file
-load_dotenv(BASE_DIR / ".env")
-
-AWS_ACCESS_KEY_ID = os.getenv("AWS_ACCESS_KEY_ID")
-AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
-AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
-S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-
-
-# ============================================================
-# VALIDATE ENVIRONMENT VARIABLES
-# ============================================================
-
-missing_variables = []
-
-if not AWS_ACCESS_KEY_ID:
-    missing_variables.append("AWS_ACCESS_KEY_ID")
-
-if not AWS_SECRET_ACCESS_KEY:
-    missing_variables.append("AWS_SECRET_ACCESS_KEY")
-
-if not S3_BUCKET_NAME:
-    missing_variables.append("S3_BUCKET_NAME")
-
-
-if missing_variables:
-    raise RuntimeError(
-        "Missing environment variables: "
-        + ", ".join(missing_variables)
-    )
-
-
-# ============================================================
-# FASTAPI APPLICATION
-# ============================================================
-
-app = FastAPI(
-    title="Multi-Cloud Data Management Platform",
-    description="Cloud-based file management and replication platform",
-    version="1.0.0"
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=secret_key,
+    same_site="lax",
+    https_only=os.getenv("COOKIE_HTTPS_ONLY", "false").lower() == "true"
 )
 
+base_dir = Path(__file__).resolve().parent.parent
+templates = Jinja2Templates(directory=str(base_dir / "templates"))
 
-# ============================================================
-# AWS S3 CLIENT
-# ============================================================
+aws_region = os.getenv("AWS_REGION", "ap-northeast-1")
+bucket_name = os.getenv("S3_BUCKET_NAME")
+container_name = os.getenv("AZURE_CONTAINER_NAME", "uploads")
 
-try:
+s3 = boto3.client(
+    "s3",
+    region_name=aws_region,
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID") or None,
+    aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY") or None
+)
 
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
-        region_name=AWS_REGION
+connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+blob_service = None
+
+if connection_string:
+    blob_service = BlobServiceClient.from_connection_string(
+        connection_string
     )
 
-except Exception as e:
-
-    raise RuntimeError(
-        f"Failed to create AWS S3 client: {str(e)}"
-    )
+admin_username = os.getenv("ADMIN_USERNAME", "")
+admin_password = os.getenv("ADMIN_PASSWORD", "")
 
 
-# ============================================================
-# HOME
-# ============================================================
+def check_login(request):
+    if not request.session.get("logged_in"):
+        raise HTTPException(status_code=401, detail="Please login first")
+
+
+def check_provider(provider):
+    if provider not in ("aws", "azure"):
+        raise HTTPException(status_code=400, detail="Invalid provider")
+
+
+def get_container():
+    if not blob_service:
+        raise HTTPException(status_code=500, detail="Azure is not configured")
+
+    return blob_service.get_container_client(container_name)
+
+
+def clean_filename(filename):
+    filename = filename.replace("\\", "/").split("/")[-1].strip()
+
+    if not filename or filename in (".", ".."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    return filename
+
+
+def format_size(size):
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.2f} KB"
+    if size < 1024 * 1024 * 1024:
+        return f"{size / (1024 * 1024):.2f} MB"
+
+    return f"{size / (1024 * 1024 * 1024):.2f} GB"
+
 
 @app.get("/", response_class=HTMLResponse)
-def home():
+async def home(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={"request": request}
+    )
+
+
+@app.post("/login")
+async def login(
+    request: Request,
+    username: str = Form(...),
+    password: str = Form(...)
+):
+    if not admin_username or not admin_password:
+        raise HTTPException(status_code=500, detail="Login is not configured")
+
+    username_ok = secrets.compare_digest(username, admin_username)
+    password_ok = secrets.compare_digest(password, admin_password)
+
+    if username_ok and password_ok:
+        request.session.clear()
+        request.session["logged_in"] = True
+        return {"message": "Login successful"}
+
+    raise HTTPException(
+        status_code=401,
+        detail="Invalid username or password"
+    )
+
+
+@app.post("/logout")
+async def logout(request: Request):
+    request.session.clear()
+    return {"message": "Logged out successfully"}
+
+
+@app.get("/auth/me")
+async def auth_status(request: Request):
+    return {"logged_in": bool(request.session.get("logged_in"))}
 
-    return """
-    <!DOCTYPE html>
-
-    <html lang="en">
-
-    <head>
-
-        <meta charset="UTF-8">
-
-        <meta
-            name="viewport"
-            content="width=device-width, initial-scale=1.0"
-        >
-
-        <title>Multi-Cloud Data Management Platform</title>
-
-        <style>
-
-            body {
-
-                font-family: Arial, sans-serif;
-
-                background: #0f172a;
-
-                color: #e2e8f0;
-
-                margin: 0;
-
-                padding: 40px;
-
-            }
-
-            .container {
-
-                max-width: 900px;
-
-                margin: 0 auto;
-
-                background: #111827;
-
-                border-radius: 16px;
-
-                padding: 32px;
-
-                box-shadow:
-                    0 10px 30px rgba(0,0,0,0.25);
-
-            }
-
-            h1 {
-
-                color: #7dd3fc;
-
-                margin-top: 0;
-
-            }
-
-            h2 {
-
-                color: #cbd5e1;
-
-            }
-
-            .badge {
-
-                display: inline-block;
-
-                background: #16a34a;
-
-                color: white;
-
-                padding: 6px 12px;
-
-                border-radius: 999px;
-
-                font-size: 12px;
-
-                margin-bottom: 20px;
-
-            }
-
-            code {
-
-                background: #1f2937;
-
-                padding: 4px 8px;
-
-                border-radius: 6px;
-
-                color: #7dd3fc;
-
-            }
-
-            ul {
-
-                line-height: 2;
-
-            }
-
-        </style>
-
-    </head>
-
-    <body>
-
-        <div class="container">
-
-            <div class="badge">
-                API is running
-            </div>
-
-            <h1>
-                Multi-Cloud Data Management Platform
-            </h1>
-
-            <p>
-                Backend is active and connected to AWS S3.
-            </p>
-
-            <h2>
-                Available Endpoints
-            </h2>
-
-            <ul>
-
-                <li>
-                    <code>GET /health</code>
-                    - Health check
-                </li>
-
-                <li>
-                    <code>POST /upload</code>
-                    - Upload file to S3
-                </li>
-
-                <li>
-                    <code>GET /files</code>
-                    - List S3 files
-                </li>
-
-                <li>
-                    <code>GET /download/{filename}</code>
-                    - Download file
-                </li>
-
-                <li>
-                    <code>DELETE /delete/{filename}</code>
-                    - Delete file
-                </li>
-
-                <li>
-                    <code>GET /docs</code>
-                    - Swagger API documentation
-                </li>
-
-            </ul>
-
-        </div>
-
-    </body>
-
-    </html>
-    """
-
-
-# ============================================================
-# HEALTH CHECK
-# ============================================================
 
 @app.get("/health")
-def health():
-
-    try:
-
-        # Check whether bucket is accessible
-        s3.head_bucket(
-            Bucket=S3_BUCKET_NAME
-        )
-
-        return {
-            "status": "healthy",
-            "service": "FastAPI",
-            "s3": "connected",
-            "bucket": S3_BUCKET_NAME,
-            "region": AWS_REGION
-        }
-
-    except ClientError as e:
-
-        return {
-            "status": "unhealthy",
-            "service": "FastAPI",
-            "s3": "connection failed",
-            "error": str(e)
-        }
+async def health():
+    return {"status": "running"}
 
 
-# ============================================================
-# UPLOAD FILE TO S3
-# ============================================================
-
-@app.post("/upload")
+@app.post("/upload/{provider}")
 async def upload_file(
+    provider: str,
+    request: Request,
     file: UploadFile = File(...)
 ):
+    check_login(request)
+    check_provider(provider)
 
-    if not file.filename:
-
-        raise HTTPException(
-            status_code=400,
-            detail="No filename provided"
-        )
-
-    filename = Path(file.filename).name
+    filename = clean_filename(file.filename or "")
+    data = await file.read()
 
     try:
+        if provider == "aws":
+            if not bucket_name:
+                raise HTTPException(
+                    status_code=500,
+                    detail="S3 bucket is not configured"
+                )
 
-        # Upload file to S3
-        s3.upload_fileobj(
-            file.file,
-            S3_BUCKET_NAME,
-            filename,
-            ExtraArgs={
-                "ContentType": file.content_type
-                or "application/octet-stream"
-            }
-        )
+            s3.upload_fileobj(
+                BytesIO(data),
+                bucket_name,
+                filename,
+                ExtraArgs={
+                    "ContentType": file.content_type
+                    or "application/octet-stream"
+                }
+            )
+        else:
+            container = get_container()
+            blob = container.get_blob_client(filename)
+            blob.upload_blob(data, overwrite=True)
 
         return {
-
-            "status": "success",
-
+            "message": "File uploaded successfully",
             "filename": filename,
-
-            "bucket": S3_BUCKET_NAME,
-
-            "message": "File uploaded successfully"
-
+            "provider": provider,
+            "size": format_size(len(data))
         }
 
-    except ClientError as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"S3 upload failed: {str(e)}"
-        )
-
-    except BotoCoreError as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"AWS error: {str(e)}"
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-            status_code=500,
-            detail=f"Upload failed: {str(e)}"
-        )
+    except (ClientError, AzureError) as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
+    finally:
+        await file.close()
 
 
-# ============================================================
-# LIST ALL FILES FROM S3
-# ============================================================
+@app.get("/files/{provider}")
+async def list_files(provider: str, request: Request):
+    check_login(request)
+    check_provider(provider)
 
-@app.get("/files")
-def list_files():
+    files = []
 
     try:
+        if provider == "aws":
+            if not bucket_name:
+                raise HTTPException(
+                    status_code=500,
+                    detail="S3 bucket is not configured"
+                )
 
-        files = []
+            paginator = s3.get_paginator("list_objects_v2")
 
-        # First request
-        response = s3.list_objects_v2(
-            Bucket=S3_BUCKET_NAME
-        )
+            for page in paginator.paginate(Bucket=bucket_name):
+                for item in page.get("Contents", []):
+                    files.append({
+                        "name": item["Key"],
+                        "size": item["Size"],
+                        "size_readable": format_size(item["Size"]),
+                        "last_modified": item["LastModified"].isoformat()
+                    })
+        else:
+            container = get_container()
 
-        # Add first page
-        for obj in response.get("Contents", []):
-
-            files.append({
-
-                "filename": obj["Key"],
-
-                "size": obj["Size"],
-
-                "last_modified":
-                    obj["LastModified"].isoformat()
-
-            })
-
-        # Handle pagination
-        while response.get("IsTruncated"):
-
-            response = s3.list_objects_v2(
-
-                Bucket=S3_BUCKET_NAME,
-
-                ContinuationToken=
-                    response["NextContinuationToken"]
-
-            )
-
-            for obj in response.get("Contents", []):
-
+            for item in container.list_blobs():
+                size = item.size or 0
                 files.append({
-
-                    "filename": obj["Key"],
-
-                    "size": obj["Size"],
-
-                    "last_modified":
-                        obj["LastModified"].isoformat()
-
+                    "name": item.name,
+                    "size": size,
+                    "size_readable": format_size(size),
+                    "last_modified": (
+                        item.last_modified.isoformat()
+                        if item.last_modified else None
+                    )
                 })
 
         return {
-
-            "status": "success",
-
-            "bucket": S3_BUCKET_NAME,
-
-            "total_files": len(files),
-
+            "provider": provider,
+            "count": len(files),
             "files": files
-
         }
 
-    except ClientError as e:
-
-        raise HTTPException(
-
-            status_code=500,
-
-            detail=f"Unable to list S3 files: {str(e)}"
-
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-
-            status_code=500,
-
-            detail=f"Error listing files: {str(e)}"
-
-        )
+    except (ClientError, AzureError) as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
-# ============================================================
-# DOWNLOAD FILE FROM S3
-# ============================================================
-
-@app.get("/download/{filename:path}")
-def download_file(filename: str):
-
-    filename = Path(filename).name
+@app.get("/download/{provider}/{filename:path}")
+async def download_file(
+    provider: str,
+    filename: str,
+    request: Request
+):
+    check_login(request)
+    check_provider(provider)
+    filename = clean_filename(filename)
 
     try:
+        if provider == "aws":
+            if not bucket_name:
+                raise HTTPException(
+                    status_code=500,
+                    detail="S3 bucket is not configured"
+                )
 
-        response = s3.get_object(
-
-            Bucket=S3_BUCKET_NAME,
-
-            Key=filename
-
-        )
-
-        file_stream = response["Body"]
-
-        content_type = response.get(
-            "ContentType",
-            "application/octet-stream"
-        )
+            result = s3.get_object(
+                Bucket=bucket_name,
+                Key=filename
+            )
+            data = result["Body"].read()
+        else:
+            container = get_container()
+            blob = container.get_blob_client(filename)
+            data = blob.download_blob().readall()
 
         return StreamingResponse(
-
-            file_stream,
-
-            media_type=content_type,
-
+            BytesIO(data),
+            media_type="application/octet-stream",
             headers={
-
-                "Content-Disposition":
-                    f'attachment; filename="{filename}"'
-
+                "Content-Disposition": f'attachment; filename="{filename}"'
             }
-
         )
 
-    except ClientError as e:
+    except ClientError as error:
+        code = error.response.get("Error", {}).get("Code", "")
 
-        error_code = e.response.get(
-            "Error", {}
-        ).get(
-            "Code"
-        )
-
-        if error_code in [
-            "NoSuchKey",
-            "404",
-            "NotFound"
-        ]:
-
+        if code in ("NoSuchKey", "404", "NotFound"):
             raise HTTPException(
-
                 status_code=404,
-
                 detail="File not found"
+            ) from error
 
-            )
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
-        raise HTTPException(
+    except AzureError as error:
+        if getattr(error, "status_code", None) == 404:
+            raise HTTPException(
+                status_code=404,
+                detail="File not found"
+            ) from error
 
-            status_code=500,
-
-            detail=f"S3 download failed: {str(e)}"
-
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-
-            status_code=500,
-
-            detail=f"Download failed: {str(e)}"
-
-        )
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
-# ============================================================
-# DELETE FILE FROM S3
-# ============================================================
-
-@app.delete("/delete/{filename:path}")
-def delete_file(filename: str):
-
-    filename = Path(filename).name
+@app.delete("/files/{provider}/{filename:path}")
+async def delete_file(
+    provider: str,
+    filename: str,
+    request: Request
+):
+    check_login(request)
+    check_provider(provider)
+    filename = clean_filename(filename)
 
     try:
+        if provider == "aws":
+            if not bucket_name:
+                raise HTTPException(
+                    status_code=500,
+                    detail="S3 bucket is not configured"
+                )
 
-        # Check if file exists
-        s3.head_object(
-
-            Bucket=S3_BUCKET_NAME,
-
-            Key=filename
-
-        )
-
-        # Delete file
-        s3.delete_object(
-
-            Bucket=S3_BUCKET_NAME,
-
-            Key=filename
-
-        )
+            s3.delete_object(
+                Bucket=bucket_name,
+                Key=filename
+            )
+        else:
+            container = get_container()
+            container.delete_blob(filename)
 
         return {
-
-            "status": "success",
-
+            "message": "File deleted successfully",
             "filename": filename,
-
-            "message": "File deleted successfully"
-
+            "provider": provider
         }
 
-    except ClientError as e:
-
-        error_code = e.response.get(
-            "Error", {}
-        ).get(
-            "Code"
-        )
-
-        if error_code in [
-            "404",
-            "NoSuchKey",
-            "NotFound"
-        ]:
-
-            raise HTTPException(
-
-                status_code=404,
-
-                detail="File not found"
-
-            )
-
-        raise HTTPException(
-
-            status_code=500,
-
-            detail=f"S3 delete failed: {str(e)}"
-
-        )
-
-    except Exception as e:
-
-        raise HTTPException(
-
-            status_code=500,
-
-            detail=f"Delete failed: {str(e)}"
-
-        )
+    except (ClientError, AzureError) as error:
+        raise HTTPException(status_code=502, detail=str(error)) from error
 
 
-# ============================================================
-# APPLICATION START
-# ============================================================
+@app.get("/analytics")
+async def analytics(request: Request):
+    check_login(request)
 
-if __name__ == "__main__":
+    aws_count = 0
+    aws_size = 0
+    azure_count = 0
+    azure_size = 0
+    errors = []
 
-    import uvicorn
+    try:
+        if bucket_name:
+            paginator = s3.get_paginator("list_objects_v2")
 
-    uvicorn.run(
+            for page in paginator.paginate(Bucket=bucket_name):
+                for item in page.get("Contents", []):
+                    aws_count += 1
+                    aws_size += item["Size"]
+        else:
+            errors.append("S3 bucket is not configured")
 
-        app,
+    except ClientError as error:
+        errors.append(f"AWS: {error}")
 
-        host="127.0.0.1",
+    try:
+        if blob_service:
+            container = get_container()
 
-        port=8000
+            for item in container.list_blobs():
+                azure_count += 1
+                azure_size += item.size or 0
+        else:
+            errors.append("Azure is not configured")
 
-    )
+    except AzureError as error:
+        errors.append(f"Azure: {error}")
+
+    total_size = aws_size + azure_size
+
+    return {
+        "aws": {
+            "files": aws_count,
+            "bytes": aws_size,
+            "size": format_size(aws_size)
+        },
+        "azure": {
+            "files": azure_count,
+            "bytes": azure_size,
+            "size": format_size(azure_size)
+        },
+        "total": {
+            "files": aws_count + azure_count,
+            "bytes": total_size,
+            "size": format_size(total_size)
+        },
+        "errors": errors
+    }

@@ -1,0 +1,695 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Cloud Data Management</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            color: #222;
+        }
+
+        .navbar {
+            background: #172b4d;
+            color: white;
+            padding: 18px 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .navbar h2 {
+            font-size: 21px;
+        }
+
+        .navbar button {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+
+        .welcome {
+            margin-bottom: 25px;
+        }
+
+        .welcome h1 {
+            font-size: 27px;
+            margin-bottom: 8px;
+        }
+
+        .welcome p {
+            color: #666;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 18px;
+            margin-bottom: 25px;
+        }
+
+        .card {
+            background: white;
+            padding: 22px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        }
+
+        .card p {
+            color: #666;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .card h2 {
+            font-size: 26px;
+            color: #172b4d;
+        }
+
+        .panel {
+            background: white;
+            padding: 24px;
+            border-radius: 9px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+            margin-bottom: 25px;
+        }
+
+        .panel h2 {
+            font-size: 20px;
+            margin-bottom: 18px;
+        }
+
+        .upload-form {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+        }
+
+        select, input[type="file"], input[type="text"], input[type="password"] {
+            padding: 11px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background: white;
+            min-width: 150px;
+        }
+
+        button {
+            cursor: pointer;
+            border: none;
+            border-radius: 5px;
+            padding: 11px 16px;
+            font-size: 14px;
+        }
+
+        .primary {
+            background: #2563eb;
+            color: white;
+        }
+
+        .secondary {
+            background: #e8eef9;
+            color: #172b4d;
+        }
+
+        .danger {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 550px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 14px 12px;
+            border-bottom: 1px solid #eee;
+            font-size: 14px;
+        }
+
+        th {
+            background: #f8fafc;
+            color: #444;
+        }
+
+        .actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .status {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #444;
+            overflow-wrap: anywhere;
+        }
+
+        .login-screen {
+            position: fixed;
+            inset: 0;
+            background: #f4f6f9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+            z-index: 10;
+        }
+
+        .login-box {
+            background: white;
+            padding: 32px;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 400px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .login-box h2 {
+            margin-bottom: 8px;
+        }
+
+        .login-box p {
+            color: #666;
+            margin-bottom: 22px;
+            font-size: 14px;
+        }
+
+        .login-box input {
+            display: block;
+            width: 100%;
+            margin-bottom: 15px;
+        }
+
+        .login-box button {
+            width: 100%;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .bar {
+            height: 8px;
+            background: #e5e7eb;
+            border-radius: 5px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+
+        .bar-fill {
+            height: 100%;
+            width: 0;
+            background: #2563eb;
+            border-radius: 5px;
+        }
+
+        .azure-fill {
+            background: #0f9dca;
+        }
+
+        .footer {
+            text-align: center;
+            color: #777;
+            padding: 25px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 600px) {
+            .navbar {
+                padding: 16px 20px;
+            }
+
+            .container {
+                margin-top: 20px;
+                padding: 0 12px;
+            }
+
+            .panel {
+                padding: 18px;
+            }
+
+            .welcome h1 {
+                font-size: 23px;
+            }
+
+            .upload-form {
+                align-items: stretch;
+                flex-direction: column;
+            }
+
+            .upload-form select,
+            .upload-form input,
+            .upload-form button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <h2>Welcome Back</h2>
+            <p>Sign in to access your cloud storage.</p>
+
+            <form id="loginForm">
+                <input type="text" id="username" placeholder="Username" required autocomplete="username">
+                <input type="password" id="password" placeholder="Password" required autocomplete="current-password">
+                <button type="submit" class="primary" id="loginButton">Login</button>
+            </form>
+
+            <div class="status" id="loginStatus"></div>
+        </div>
+    </div>
+
+    <div id="dashboard" class="hidden">
+        <nav class="navbar">
+            <h2>Multi-Cloud Platform</h2>
+            <button id="logoutButton">Logout</button>
+        </nav>
+
+        <main class="container">
+            <section class="welcome">
+                <h1>Dashboard</h1>
+                <p>Manage your files across AWS S3 and Azure Blob Storage.</p>
+            </section>
+
+            <section class="cards">
+                <div class="card">
+                    <p>Total Files</p>
+                    <h2 id="totalFiles">0</h2>
+                </div>
+
+                <div class="card">
+                    <p>Total Storage</p>
+                    <h2 id="totalStorage">0 B</h2>
+                </div>
+
+                <div class="card">
+                    <p>AWS S3 Files</p>
+                    <h2 id="awsFiles">0</h2>
+                    <div class="bar">
+                        <div class="bar-fill" id="awsBar"></div>
+                    </div>
+                    <p id="awsStorage" style="margin-top: 8px;">0 B used</p>
+                </div>
+
+                <div class="card">
+                    <p>Azure Files</p>
+                    <h2 id="azureFiles">0</h2>
+                    <div class="bar">
+                        <div class="bar-fill azure-fill" id="azureBar"></div>
+                    </div>
+                    <p id="azureStorage" style="margin-top: 8px;">0 B used</p>
+                </div>
+            </section>
+
+            <section class="panel">
+                <h2>Upload File</h2>
+
+                <form id="uploadForm" class="upload-form">
+                    <select id="uploadProvider" required>
+                        <option value="aws">AWS S3</option>
+                        <option value="azure">Azure Blob Storage</option>
+                    </select>
+
+                    <input type="file" id="fileInput" required>
+                    <button type="submit" class="primary" id="uploadButton">Upload File</button>
+                </form>
+
+                <div class="status" id="uploadStatus"></div>
+            </section>
+
+            <section class="panel">
+                <h2>Stored Files</h2>
+
+                <div class="upload-form" style="margin-bottom: 20px;">
+                    <select id="listProvider">
+                        <option value="aws">AWS S3</option>
+                        <option value="azure">Azure Blob Storage</option>
+                    </select>
+
+                    <button class="primary" id="refreshButton" type="button">Refresh Files</button>
+                </div>
+
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>File Name</th>
+                                <th>Size</th>
+                                <th>Last Modified</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fileTable">
+                            <tr>
+                                <td colspan="4">Select a storage provider to view files.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="status" id="fileStatus"></div>
+            </section>
+
+            <section class="panel">
+                <h2>Storage Information</h2>
+                <p id="healthStatus">Checking application status...</p>
+                <p class="status" id="analyticsStatus"></p>
+            </section>
+        </main>
+
+        <footer class="footer">
+            Multi-Cloud Data Management Platform
+        </footer>
+    </div>
+
+    <script>
+        const loginScreen = document.getElementById("loginScreen");
+        const dashboard = document.getElementById("dashboard");
+        const loginForm = document.getElementById("loginForm");
+        const loginStatus = document.getElementById("loginStatus");
+        const uploadForm = document.getElementById("uploadForm");
+        const uploadStatus = document.getElementById("uploadStatus");
+        const fileStatus = document.getElementById("fileStatus");
+        const fileTable = document.getElementById("fileTable");
+
+        async function apiRequest(url, options = {}) {
+            const response = await fetch(url, {
+                credentials: "same-origin",
+                ...options
+            });
+
+            if (response.status === 401) {
+                showLogin();
+                throw new Error("Session expired. Please login again.");
+            }
+
+            const data = await response.json().catch(() => ({}));
+
+            if (!response.ok) {
+                throw new Error(data.detail || "Request failed");
+            }
+
+            return data;
+        }
+
+        function showDashboard() {
+            loginScreen.classList.add("hidden");
+            dashboard.classList.remove("hidden");
+            loadAnalytics();
+            loadFiles();
+            checkHealth();
+        }
+
+        function showLogin() {
+            dashboard.classList.add("hidden");
+            loginScreen.classList.remove("hidden");
+        }
+
+        loginForm.addEventListener("submit", async function(event) {
+            event.preventDefault();
+
+            const button = document.getElementById("loginButton");
+            button.disabled = true;
+            loginStatus.textContent = "Signing in...";
+
+            const formData = new URLSearchParams();
+            formData.append("username", document.getElementById("username").value);
+            formData.append("password", document.getElementById("password").value);
+
+            try {
+                await apiRequest("/login", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/x-www-form-urlencoded"
+                    },
+                    body: formData
+                });
+
+                loginForm.reset();
+                loginStatus.textContent = "";
+                showDashboard();
+            } catch (error) {
+                loginStatus.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        document.getElementById("logoutButton").addEventListener("click", async function() {
+            try {
+                await apiRequest("/logout", { method: "POST" });
+                showLogin();
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+
+        uploadForm.addEventListener("submit", async function(event) {
+            event.preventDefault();
+
+            const file = document.getElementById("fileInput").files[0];
+            const provider = document.getElementById("uploadProvider").value;
+            const button = document.getElementById("uploadButton");
+
+            if (!file) {
+                uploadStatus.textContent = "Please select a file.";
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            button.disabled = true;
+            uploadStatus.textContent = "Uploading file...";
+
+            try {
+                const result = await apiRequest("/upload/" + provider, {
+                    method: "POST",
+                    body: formData
+                });
+
+                uploadStatus.textContent = result.message + ": " + result.filename;
+                document.getElementById("listProvider").value = provider;
+                document.getElementById("fileInput").value = "";
+                await loadFiles();
+                await loadAnalytics();
+            } catch (error) {
+                uploadStatus.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        document.getElementById("refreshButton").addEventListener("click", loadFiles);
+        document.getElementById("listProvider").addEventListener("change", loadFiles);
+
+        async function loadFiles() {
+            const provider = document.getElementById("listProvider").value;
+            fileStatus.textContent = "Loading files...";
+            fileTable.replaceChildren();
+
+            try {
+                const result = await apiRequest("/files/" + provider);
+
+                if (!result.files.length) {
+                    const row = document.createElement("tr");
+                    const cell = document.createElement("td");
+                    cell.colSpan = 4;
+                    cell.textContent = "No files found.";
+                    row.appendChild(cell);
+                    fileTable.appendChild(row);
+                } else {
+                    result.files.forEach(function(file) {
+                        const row = document.createElement("tr");
+
+                        const nameCell = document.createElement("td");
+                        nameCell.textContent = file.name;
+
+                        const sizeCell = document.createElement("td");
+                        sizeCell.textContent = file.size_readable || formatSize(file.size || 0);
+
+                        const dateCell = document.createElement("td");
+                        dateCell.textContent = file.last_modified
+                            ? new Date(file.last_modified).toLocaleString()
+                            : "-";
+
+                        const actionCell = document.createElement("td");
+                        const actions = document.createElement("div");
+                        actions.className = "actions";
+
+                        const downloadButton = document.createElement("button");
+                        downloadButton.className = "secondary";
+                        downloadButton.textContent = "Download";
+                        downloadButton.addEventListener("click", function() {
+                            downloadFile(provider, file.name);
+                        });
+
+                        const deleteButton = document.createElement("button");
+                        deleteButton.className = "danger";
+                        deleteButton.textContent = "Delete";
+                        deleteButton.addEventListener("click", function() {
+                            deleteFile(provider, file.name);
+                        });
+
+                        actions.append(downloadButton, deleteButton);
+                        actionCell.appendChild(actions);
+                        row.append(nameCell, sizeCell, dateCell, actionCell);
+                        fileTable.appendChild(row);
+                    });
+                }
+
+                fileStatus.textContent = result.count + " file(s) found.";
+            } catch (error) {
+                fileStatus.textContent = error.message;
+            }
+        }
+
+        async function downloadFile(provider, filename) {
+            try {
+                const response = await fetch(
+                    "/download/" + provider + "/" + encodeURIComponent(filename),
+                    { credentials: "same-origin" }
+                );
+
+                if (response.status === 401) {
+                    showLogin();
+                    throw new Error("Please login again.");
+                }
+
+                if (!response.ok) {
+                    const data = await response.json().catch(() => ({}));
+                    throw new Error(data.detail || "Download failed");
+                }
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+
+                link.href = url;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function deleteFile(provider, filename) {
+            if (!confirm("Are you sure you want to delete " + filename + "?")) {
+                return;
+            }
+
+            try {
+                await apiRequest(
+                    "/files/" + provider + "/" + encodeURIComponent(filename),
+                    { method: "DELETE" }
+                );
+
+                fileStatus.textContent = "File deleted successfully.";
+                await loadFiles();
+                await loadAnalytics();
+            } catch (error) {
+                alert(error.message);
+            }
+        }
+
+        async function loadAnalytics() {
+            try {
+                const data = await apiRequest("/analytics");
+
+                document.getElementById("totalFiles").textContent = data.total.files;
+                document.getElementById("totalStorage").textContent = data.total.size;
+                document.getElementById("awsFiles").textContent = data.aws.files;
+                document.getElementById("azureFiles").textContent = data.azure.files;
+                document.getElementById("awsStorage").textContent = data.aws.size + " used";
+                document.getElementById("azureStorage").textContent = data.azure.size + " used";
+
+                const total = data.aws.bytes + data.azure.bytes;
+                const awsPercent = total ? (data.aws.bytes / total) * 100 : 0;
+                const azurePercent = total ? (data.azure.bytes / total) * 100 : 0;
+
+                document.getElementById("awsBar").style.width = awsPercent + "%";
+                document.getElementById("azureBar").style.width = azurePercent + "%";
+
+                document.getElementById("analyticsStatus").textContent =
+                    data.errors && data.errors.length
+                        ? data.errors.join(" | ")
+                        : "Storage information updated.";
+            } catch (error) {
+                document.getElementById("analyticsStatus").textContent = error.message;
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                const data = await apiRequest("/health");
+                document.getElementById("healthStatus").textContent =
+                    data.status === "running" ? "Application is running." : "Application status unavailable.";
+            } catch (error) {
+                document.getElementById("healthStatus").textContent = error.message;
+            }
+        }
+
+        function formatSize(size) {
+            if (size < 1024) return size + " B";
+            if (size < 1024 * 1024) return (size / 1024).toFixed(2) + " KB";
+            if (size < 1024 * 1024 * 1024) return (size / (1024 * 1024)).toFixed(2) + " MB";
+            return (size / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+        }
+
+        async function startApp() {
+            try {
+                const data = await apiRequest("/auth/me");
+
+                if (data.logged_in) {
+                    showDashboard();
+                } else {
+                    showLogin();
+                }
+            } catch (error) {
+                showLogin();
+                loginStatus.textContent = error.message;
+            }
+        }
+
+        startApp();
+    </script>
+</body>
+</html>
